@@ -37,12 +37,9 @@ fi
 MODE=default
 CHECK_DOCKER=1
 
-# read alidock properties file ($CONFIG_FILE) if it is exists or create a new one with default properties
-if [ -f "$CONFIG_FILE" ]; then
-  while IFS='=' read -r key value; do
-    key=$(echo $key | tr '.' '_')
-    eval ${key}=\${value}
-  done < "$CONFIG_FILE"
+# Read alidock properties file ($CONFIG_FILE) if it is exists or create a new one with default properties
+if [[ -r "$CONFIG_FILE" ]]; then
+  source $CONFIG_FILE
 else
   VENV_DEST="$HOME/.virtualenvs/alidock"
   PROG_DIR=$(cd "$(dirname "$0")"; pwd)
@@ -62,7 +59,7 @@ while [[ $# -gt 0 ]]; do
     ;;
     --path=*)
       PROG_DIR="${1#*=}"
-      ;;
+    ;;
     --help)
       pinfo "alidock-installer.sh: install alidock in a Python virtualenv"
       pinfo ""
@@ -75,8 +72,8 @@ while [[ $# -gt 0 ]]; do
       pwarn "    alidock-installer.sh <version>       # install specific version from PyPI"
       pwarn ""
       pwarn "Parameters:"
-      pwarn "    --venv=[virtual_environment_path]    # don't check if Docker works"      
-      pwarn "    --path=[alidock_path]                # don't check if Docker works"
+      pwarn "    --venv=[virtual_environment_path]    # install on specified virtual environment path"      
+      pwarn "    --path=[alidock_path]                # use specified alidock home"
       pwarn "    --no-check-docker                    # don't check if Docker works"
       pwarn "    --quiet                              # suppress messages (except errors)"
       exit 1
@@ -142,11 +139,11 @@ fi
 
 # Patch init scripts for bash and zsh
 SHELL_CHANGED=
-CURRENT_SHELL="$SHELL"
+CURRENT_SHELL=$(ps -e -o pid,command | grep -E "^\s*$PPID\s+" | awk '{print $2}' | sed -e 's/^-\{0,1\}\(.*\)$/\1/')
 case "$CURRENT_SHELL" in
-  /bin/bash) SHELLRCS="$HOME/.bashrc" ;;
-  /bin/zsh)  SHELLRCS="$HOME/.zshrc" ;;
-  *)         SHELLRCS="$HOME/.bashrc $HOME/.zshrc" ;;
+  BASH) SHELLRCS="$HOME/.bashrc" ;;
+  ZSH)  SHELLRCS="$HOME/.zshrc" ;;
+  *)    SHELLRCS="$HOME/.bashrc $HOME/.zshrc" ;;
 esac
 
 for SHELLRC in $SHELLRCS; do
