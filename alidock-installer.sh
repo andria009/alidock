@@ -9,9 +9,16 @@
 set -e
 set -o pipefail
 
+<<<<<<< HEAD
 VIRTUALENV_VERSION=16.1.0
 CONFIG_FILE="$HOME/.alidock"
+=======
+VIRTUALENV_VERSION=16.2.0
+[[ $(uname) != Linux ]] || VIRTUALENV_VERSION=16.0.0  # pypa/virtualenv#1270
+>>>>>>> upstream/master
 TMPDIR=$(mktemp -d /tmp/alidock-installer-XXXXX)
+
+cd /
 
 function pinfo() { echo -e "\033[32m${1}\033[m" >&2; }
 function pwarn() { echo -e "\033[33m${1}\033[m" >&2; }
@@ -26,6 +33,13 @@ function swallow() {
     rm -f "$TMPDIR/log"
   fi
   return $ERR
+}
+function restore_quit() {
+  [[ -d ${VENV_DEST}.bak ]] || exit 8
+  rm -rf "$VENV_DEST"
+  mv "${VENV_DEST}.bak" "$VENV_DEST"
+  pwarn "Old alidock installation was restored"
+  exit 7
 }
 
 if [[ $(id -u) == 0 ]]; then
@@ -49,6 +63,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     git) MODE=git ;;
     devel) MODE=devel ;;
+    pull*)
+      MODE=pull
+      PRNUM=${1:4}
+    ;;
     --no-check-docker) CHECK_DOCKER= ;;
     --quiet | -q)
       function pinfo() { :; }
@@ -67,9 +85,16 @@ while [[ $# -gt 0 ]]; do
       pinfo "    alidock-installer.sh                 # use this if in doubt!"
       pinfo ""
       pwarn "Advanced usage:"
+<<<<<<< HEAD
       pwarn "    alidock-installer.sh git             # install latest version from Git"
       pwarn "    alidock-installer.sh devel           # install local development version"
       pwarn "    alidock-installer.sh <version>       # install specific version from PyPI"
+=======
+      pwarn "    alidock-installer.sh git        # install latest version from Git"
+      pwarn "    alidock-installer.sh devel      # install local development version"
+      pwarn "    alidock-installer.sh <version>  # install specific version from PyPI"
+      pwarn "    alidock-installer.sh pull<num>  # install version from pull request <num>"
+>>>>>>> upstream/master
       pwarn ""
       pwarn "Parameters:"
       pwarn "    --venv=[virtual_environment_path]    # install on specified virtual environment path"      
@@ -87,8 +112,25 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+<<<<<<< HEAD
 echo "VENV_DEST="${VENV_DEST} > ${CONFIG_FILE}
 echo "PROG_DIR="${PROG_DIR} >> ${CONFIG_FILE}
+=======
+URL=
+case "$MODE" in
+  default) URL=alidock ;;
+  git) URL=git+https://github.com/alidock/alidock ;;
+  devel)
+    if [[ ! -f "$PROG_DIR/setup.py" ]]; then
+      perr "Run from the development directory to install in development mode"
+      exit 4
+    fi
+    URL=("-e" "$PROG_DIR[devel]")
+  ;;
+  pull) URL=git+https://github.com/alidock/alidock@refs/pull/$PRNUM/head ;;
+  *) URL="alidock==$MODE" ;;
+esac
+>>>>>>> upstream/master
 
 # Favour `python3`, fall back on `python`
 PYTHON_BIN=python3
@@ -98,44 +140,40 @@ if ! type "$PYTHON_BIN" &> /dev/null; then
   exit 3
 fi
 
+# Check if Python distutils is available (otherwise virtualenv will fail)
+if ! "$PYTHON_BIN" -c 'import distutils.spawn' &> /dev/null; then
+  perr "Your Python installation using $PYTHON_BIN seems incomplete: distutils is missing"
+  if [[ $(uname) == Linux && -x /usr/bin/apt-get && "$PYTHON_BIN" == *python3 ]]; then
+    perr "Try installing it with:"
+    perr "  sudo apt-get update && sudo apt-get install python3-distutils"
+  fi
+  exit 6
+fi
+
 # Check if Docker is there and user can use it
 if [[ $CHECK_DOCKER ]]; then
   pinfo "Checking if your Docker installation works"
   swallow docker run -it --rm hello-world
 fi
 
-cd /
-
 pushd "$TMPDIR" &> /dev/null
-  pinfo "Creating an environment for alidock using $("$PYTHON_BIN" --version 2>&1 | grep Python) ("$PYTHON_BIN")"
+  PYTHON_INFO="$("$PYTHON_BIN" --version 2>&1 | grep Python) ("$PYTHON_BIN")"
+  pinfo "Creating an environment for alidock using $PYTHON_INFO and virtualenv $VIRTUALENV_VERSION"
   curl -Lso - https://github.com/pypa/virtualenv/tarball/${VIRTUALENV_VERSION} | tar xzf -
-  rm -rf "$VENV_DEST"  # always start from scratch
-  swallow "$PYTHON_BIN" pypa-virtualenv-*/src/virtualenv.py "$VENV_DEST"
+  if [[ -d $VENV_DEST ]]; then
+    rm -rf "${VENV_DEST}.bak"
+    mv "$VENV_DEST" "${VENV_DEST}.bak"  # make backup of current venv
+  fi
+  VIRTUALENV_BIN=$(echo pypa-virtualenv-*/virtualenv.py)
+  [[ -e $VIRTUALENV_BIN ]] || VIRTUALENV_BIN=$(echo pypa-virtualenv-*/src/virtualenv.py)
+  swallow "$PYTHON_BIN" "$VIRTUALENV_BIN" "$VENV_DEST" || restore_quit
 popd &> /dev/null
 
 pinfo "Installing alidock under $VENV_DEST"
 swallow source "$VENV_DEST/bin/activate"
 
-URL=
-DEVEL=
-case "$MODE" in
-  default) URL=alidock ;;
-  git) URL=git+https://github.com/dberzano/alidock ;;
-  devel)
-    URL="$PROG_DIR"
-    if [[ ! -f "$URL/setup.py" ]]; then
-      perr "You did not execute the installer from the development directory"
-      exit 4
-    fi
-    DEVEL="-e"
-  ;;
-  *) URL="alidock==$MODE" ;;
-esac
-
-swallow pip install --upgrade ${DEVEL} "${URL}"
-if [[ $DEVEL ]]; then
-  swallow pip install pylint
-fi
+swallow pip install --upgrade "${URL[@]}" || restore_quit
+rm -rf "${VENV_DEST}.bak"  # not needed anymore
 
 # Patch init scripts for bash and zsh
 SHELL_CHANGED=
